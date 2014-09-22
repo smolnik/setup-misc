@@ -1,0 +1,245 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+  "Description" : "Create an EC2 instance running the Amazon Linux 64 bit AMI with Glassfish app server instance ready to use. ",
+  "Parameters" : {
+    "KeyName" : {
+      "Description" : "Name of and existing EC2 KeyPair to enable SSH access to the instance",
+      "Type" : "String",
+      "Default" : "adamsmolnik-net-key-pair"
+    },
+    "BaseAmiID" : {
+      "Description" : "Id of AMI image used to create this image",
+      "Type" : "String",
+      "Default" : "ami-6481580c"
+    }
+  },
+  "Mappings" : {
+    "RegionMap" : {
+      "us-east-1" : {
+        "subnet" : "subnet-a8a554df",
+        "SecurityGroup" : "sg-7be68f1e",
+        "AZ" : "us-east-1a"
+      }
+    }
+  },
+  "Resources" : {
+    "Ec2Instance" : {
+      "Type" : "AWS::EC2::Instance",
+      "Metadata" : {
+        "AWS::CloudFormation::Init" : {
+          "config" : {
+            "packages" : {
+              "yum" : {
+                "xmlstarlet" : [ ]
+              }
+            },
+            "sources" : {
+              "/opt/" : "https://s3.amazonaws.com/net.adamsmolnik.repository/GlassFish/glassfish-4.1.zip"
+            },
+            "files" : {
+              "/etc/init.d/glassfish" : {
+                "source" : "https://s3.amazonaws.com/net.adamsmolnik.repository/GlassFish/glassfish",
+                "mode" : "000777",
+                "owner" : "root"
+              },
+              "/opt/glassfish4/bin/password.txt" : {
+                "source" : "https://s3.amazonaws.com/net.adamsmolnik.repository/GlassFish/password.txt",
+                "mode" : "000600",
+                "owner" : "root"
+              },
+              "/home/ec2-user/updateXML" : {
+                "content" : {
+                  "Fn::Join" : [ "\n", [ "#!/bin/bash", "IP=`hostname -i`", "if [ -n \"$IP\" ]; then", "xmlstarlet ed -L -s /domain/configs/config/java-config -t elem -n jvm-options -v -Djava.rmi.server.hostname=$IP /opt/glassfish4/glassfish/domains/domain1/config/domain.xml", "echo \"domain.xml updated with IP =\" $IP", "fi" ] ]
+                },
+                "mode" : "000777",
+                "owner" : "root"
+              }
+            },
+            "commands" : {
+              "010_changeRights" : {
+                "command" : "chmod -R 777 /var/log/"
+              },
+              "020_changeRights" : {
+                "command" : "chmod -R 777 /opt/glassfish4/bin/asadmin"
+              },
+              "030_changeRights" : {
+                "command" : "chmod -R 777 /opt/glassfish4/glassfish/domains/domain1/autodeploy"
+              },
+              "040_changeGlassfishAdminPassword" : {
+                "command" : "/opt/glassfish4/bin/asadmin --user admin --passwordfile /opt/glassfish4/bin/password.txt change-admin-password --domain_name domain1",
+                "cwd" : "~"
+              },
+              "050_changeRightsDomainXml" : {
+                "command" : "chmod -R 777 domain.xml",
+                "cwd" : "/opt/glassfish4/glassfish/domains/domain1/config/"
+              },
+              "060_updateDomainXML" : {
+                "command" : "xmlstarlet ed -L -s /domain/configs/config/java-config -t elem -n jvm-options -v -Dcom.sun.management.jmxremote.port=8686 domain.xml",
+                "cwd" : "/opt/glassfish4/glassfish/domains/domain1/config/"
+              },
+              "070_updateDomainXML" : {
+                "command" : "xmlstarlet ed -L -s /domain/configs/config/java-config -t elem -n jvm-options -v -Dcom.sun.management.jmxremote.local.only=false domain.xml",
+                "cwd" : "/opt/glassfish4/glassfish/domains/domain1/config/"
+              },
+              "080_updateDomainXML" : {
+                "command" : "xmlstarlet ed -L -s /domain/configs/config/java-config -t elem -n jvm-options -v -Dcom.sun.management.jmxremote.authenticate=false domain.xml",
+                "cwd" : "/opt/glassfish4/glassfish/domains/domain1/config/"
+              },
+              "090_turnOnGlassfish" : {
+                "command" : "service glassfish start",
+                "cwd" : "~"
+              },
+              "100_changePasswordFile" : {
+                "command" : "echo \"AS_ADMIN_PASSWORD=admin\" > /opt/glassfish4/bin/password.txt",
+                "cwd" : "~"
+              },
+              "110_changePasswordFileMode" : {
+                "command" : "chmod 600 /opt/glassfish4/bin/password.txt",
+                "cwd" : "~"
+              },
+              "120_enableSecureAdmin" : {
+                "command" : "/opt/glassfish4/bin/asadmin --user admin --passwordfile /opt/glassfish4/bin/password.txt enable-secure-admin",
+                "cwd" : "~"
+              },
+              "130_removePasswordFile" : {
+                "command" : "rm -f /opt/glassfish4/bin/password.txt",
+                "cwd" : "~"
+              },
+              "140_addGlassfishConfig" : {
+                "command" : "chkconfig --add glassfish",
+                "cwd" : "~"
+              },
+              "150_turnGlassfishOn" : {
+                "command" : "chkconfig glassfish on",
+                "cwd" : "~"
+              },
+              "160_glassfishRestart" : {
+                "command" : "service glassfish restart",
+                "cwd" : "~"
+              }
+            }
+          }
+        },
+        "AWS::CloudFormation::Authentication" : {
+          "default" : {
+            "type" : "s3",
+            "buckets" : [ "net.adamsmolnik.repository" ],
+            "roleName" : {
+              "Ref" : "Role"
+            }
+          }
+        }
+      },
+      "Properties" : {
+        "IamInstanceProfile" : {
+          "Ref" : "InstanceProfile"
+        },
+        "SecurityGroupIds" : [ {
+          "Fn::FindInMap" : [ "RegionMap", {
+            "Ref" : "AWS::Region"
+          }, "SecurityGroup" ]
+        } ],
+        "SubnetId" : {
+          "Fn::FindInMap" : [ "RegionMap", {
+            "Ref" : "AWS::Region"
+          }, "subnet" ]
+        },
+        "AvailabilityZone" : {
+          "Fn::FindInMap" : [ "RegionMap", {
+            "Ref" : "AWS::Region"
+          }, "AZ" ]
+        },
+        "KeyName" : {
+          "Ref" : "KeyName"
+        },
+        "InstanceType" : "t2.micro",
+        "ImageId" : {
+          "Ref" : "BaseAmiID"
+        },
+        "UserData" : {
+          "Fn::Base64" : {
+            "Fn::Join" : [ "", [ "#!/bin/bash -v\n", "/opt/aws/bin/cfn-init -s ", {
+              "Ref" : "AWS::StackName"
+            }, " -r Ec2Instance ", " -v --region ", {
+              "Ref" : "AWS::Region"
+            }, "\n", "/opt/aws/bin/cfn-signal -e $? '", {
+              "Ref" : "WaitHandle"
+            }, "'\n" ] ]
+          }
+        }
+      }
+    },
+    "InstanceProfile" : {
+      "Type" : "AWS::IAM::InstanceProfile",
+      "Properties" : {
+        "Path" : "/",
+        "Roles" : [ {
+          "Ref" : "Role"
+        } ]
+      }
+    },
+    "Role" : {
+      "Type" : "AWS::IAM::Role",
+      "Properties" : {
+        "AssumeRolePolicyDocument" : {
+          "Statement" : [ {
+            "Effect" : "Allow",
+            "Principal" : {
+              "Service" : [ "ec2.amazonaws.com" ]
+            },
+            "Action" : [ "sts:AssumeRole" ]
+          } ]
+        },
+        "Path" : "/"
+      }
+    },
+    "Policy" : {
+      "Type" : "AWS::IAM::Policy",
+      "Properties" : {
+        "PolicyName" : "Policy",
+        "PolicyDocument" : {
+          "Statement" : [ {
+            "Action" : "s3:*",
+            "Effect" : "Allow",
+            "Resource" : "*"
+          }, {
+            "Action" : "swf:*",
+            "Effect" : "Allow",
+            "Resource" : "*"
+          }, {
+            "Action" : [ "sns:CreateTopic", "sns:Subscribe", "sns:Publish" ],
+            "Effect" : "Allow",
+            "Resource" : "*"
+          } ]
+        },
+        "Roles" : [ {
+          "Ref" : "Role"
+        } ]
+      }
+    },
+    "WaitHandle" : {
+      "Type" : "AWS::CloudFormation::WaitConditionHandle",
+      "Properties" : {
+      }
+    },
+    "WaitCondition" : {
+      "Type" : "AWS::CloudFormation::WaitCondition",
+      "DependsOn" : "Ec2Instance",
+      "Properties" : {
+        "Handle" : {
+          "Ref" : "WaitHandle"
+        },
+        "Timeout" : "2000",
+        "Count" : "0"
+      }
+    }
+  },
+  "Outputs" : {
+    "InstanceId" : {
+      "Description" : "InstanceId of the newly created EC2 instance",
+      "Value" : {
+        "Ref" : "Ec2Instance"
+      }
+    }
+  }
+}

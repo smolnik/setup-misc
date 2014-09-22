@@ -1,0 +1,397 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+  "Description" : "net.adamsmolnik.scaling-in",
+  "Parameters" : {
+    "MinInstances" : {
+      "Description" : "Minimum number of instances in the auto-scale group. MinInstances = NumberOfAZ*MinInstancesAZ",
+      "Type" : "Number",
+      "Default" : "2"
+    },
+    "MaxInstances" : {
+      "Description" : "Maximum number of instances in the auto-scale group. MaxInstances = NumberOfAZ*MaxInstancesAZ",
+      "Type" : "Number",
+      "Default" : "5"
+    },
+    "MinInstancesAZ" : {
+      "Description" : "Minimum number of instances in the auto-scale group in AZ .",
+      "Type" : "Number",
+      "Default" : "2"
+    },
+    "NumberOfAZ" : {
+      "Description" : "How many AZ should be used",
+      "Type" : "Number",
+      "Default" : "2"
+    },
+    "SecurityGroup" : {
+      "Description" : "ID of security group used to set up new machine",
+      "Type" : "String",
+      "Default" : "sg-7be68f1e"
+    },
+    "SecurityKey" : {
+      "Description" : "Security key used to set up new machine",
+      "Type" : "String",
+      "Default" : "adamsmolnik-net-key-pair"
+    },
+    "InstanceType" : {
+      "Description" : "Type of instance.",
+      "Type" : "String",
+      "Default" : "t2.micro"
+    },
+    "Cooldown" : {
+      "Description" : "Cooldown for AutoScaling policy",
+      "Type" : "String",
+      "Default" : "60"
+    },
+    "Image" : {
+      "Description" : "ID of Service Ami",
+      "Type" : "String",
+      "Default" : "ami-64ba790c"
+    }
+  },
+  "Mappings" : {
+    "AZ" : {
+      "1" : {
+        "AvailabilityZones" : [ "us-east-1a" ],
+        "Subnets" : [ "subnet-a8a554df" ],
+        "AlarmsTemplate" : "https://s3.amazonaws.com/net.adamsmolnik/testapp/resources/alarms.template"
+      },
+      "2" : {
+        "AvailabilityZones" : [ "us-east-1a", "us-east-1b" ],
+        "Subnets" : [ "subnet-a8a554df", "subnet-bc3c2ffa" ],
+        "AlarmsTemplate" : "https://s3.amazonaws.com/net.adamsmolnik/testapp/resources/alarms2AZ.template"
+      }
+    }
+  },
+  "Resources" : {
+    "Queue1" : {
+      "Type" : "AWS::SQS::Queue",
+      "Properties" : {
+        "QueueName" : "Queue1"
+      }
+    },
+    "Topic1" : {
+      "Type" : "AWS::SNS::Topic",
+      "Properties" : {
+        "Subscription" : [ {
+          "Endpoint" : {
+            "Fn::GetAtt" : [ "Queue1", "Arn" ]
+          },
+          "Protocol" : "sqs"
+        } ],
+        "TopicName" : "Topic1"
+      }
+    },
+    "QueuePolicy1" : {
+      "Type" : "AWS::SQS::QueuePolicy",
+      "Properties" : {
+        "PolicyDocument" : {
+          "Id" : "QueuePolicy1",
+          "Version" : "2012-10-17",
+          "Statement" : [ {
+            "Sid" : "Allow-User-SendMessage",
+            "Effect" : "Allow",
+            "Principal" : {
+              "AWS" : "*"
+            },
+            "Action" : [ "sqs:SendMessage" ],
+            "Resource" : {
+              "Ref" : "Topic1"
+            }
+          } ]
+        },
+        "Queues" : [ {
+          "Ref" : "Queue1"
+        } ]
+      }
+    },
+    "HealthChackAlarmLow" : {
+      "Type" : "AWS::CloudWatch::Alarm",
+      "Properties" : {
+        "AlarmDescription" : "Group healthness < 75% for 5 minutes",
+        "MetricName" : "AutoScalingGroupHealthCheck",
+        "Namespace" : "net.adamsmolnik",
+        "Statistic" : "Average",
+        "Period" : "60",
+        "EvaluationPeriods" : "5",
+        "Threshold" : "75",
+        "AlarmActions" : [ {
+          "Ref" : "ScaleUpPolicy"
+        } ],
+        "Dimensions" : [ {
+          "Name" : "AutoScalingGroupName",
+          "Value" : {
+            "Ref" : "AutoScalingGroup"
+          }
+        } ],
+        "ComparisonOperator" : "LessThanThreshold"
+      }
+    },
+    "TraficLoadAlarmLow" : {
+      "Type" : "AWS::CloudWatch::Alarm",
+      "Properties" : {
+        "AlarmDescription" : "Number of requests < 50 for 20 minutes",
+        "MetricName" : "AutoScalingGroupNumberOfRequests",
+        "Namespace" : "net.adamsmolnik",
+        "Statistic" : "Average",
+        "Period" : "60",
+        "EvaluationPeriods" : "10",
+        "Threshold" : "50",
+        "AlarmActions" :[ {
+          "Ref" : "Topic1"
+        } ],
+        "Dimensions" : [ {
+          "Name" : "AutoScalingGroupName",
+          "Value" : {
+            "Ref" : "AutoScalingGroup"
+          }
+        } ],
+        "ComparisonOperator" : "LessThanThreshold"
+      }
+    },
+    "TraficLoadAlarmHigh" : {
+      "Type" : "AWS::CloudWatch::Alarm",
+      "Properties" : {
+        "AlarmDescription" : "Number of requests > 100 for 5 minutes",
+        "MetricName" : "AutoScalingGroupNumberOfRequests",
+        "Namespace" : "net.adamsmolnik",
+        "Statistic" : "Average",
+        "Period" : "60",
+        "EvaluationPeriods" : "5",
+        "Threshold" : "100",
+        "AlarmActions" : [ {
+          "Ref" : "ScaleUpPolicy"
+        } ],
+        "Dimensions" : [ {
+          "Name" : "AutoScalingGroupName",
+          "Value" : {
+            "Ref" : "AutoScalingGroup"
+          }
+        } ],
+        "ComparisonOperator" : "GreaterThanThreshold"
+      }
+    },
+    "ScaleUpPolicy" : {
+      "Type" : "AWS::AutoScaling::ScalingPolicy",
+      "Properties" : {
+        "AdjustmentType" : "ChangeInCapacity",
+        "AutoScalingGroupName" : {
+          "Ref" : "AutoScalingGroup"
+        },
+        "Cooldown" : {
+          "Ref" : "Cooldown"
+        },
+        "ScalingAdjustment" : "1"
+      }
+    },
+    "InstanceProfile" : {
+      "Type" : "AWS::IAM::InstanceProfile",
+      "Properties" : {
+        "Path" : "/",
+        "Roles" : [ {
+          "Ref" : "Role"
+        } ]
+      }
+    },
+    "Policy" : {
+      "Type" : "AWS::IAM::Policy",
+      "Properties" : {
+        "PolicyName" : "Policy",
+        "PolicyDocument" : {
+          "Statement" : [ {
+            "Action" : [ "s3:*" ],
+            "Resource" : [ "arn:aws:s3:::net.adamsmolnik", "arn:aws:s3:::net.adamsmolnik/*" ],
+            "Effect" : "Allow"
+          } ]
+        },
+        "Roles" : [ {
+          "Ref" : "Role"
+        } ]
+      }
+    },
+    "Role" : {
+      "Type" : "AWS::IAM::Role",
+      "Properties" : {
+        "AssumeRolePolicyDocument" : {
+          "Statement" : [ {
+            "Effect" : "Allow",
+            "Principal" : {
+              "Service" : [ "ec2.amazonaws.com" ]
+            },
+            "Action" : [ "sts:AssumeRole" ]
+          } ]
+        },
+        "Path" : "/"
+      }
+    },
+    "LaunchConfig" : {
+      "Type" : "AWS::AutoScaling::LaunchConfiguration",
+      "Metadata" : {
+        "AWS::CloudFormation::Init" : {
+          "config" : {
+            "packages" : {
+              "yum" : {
+                "tomcat7" : [ ],
+                "tomcat7-webapps" : [ ],
+                "tomcat7-docs-webapp" : [ ],
+                "tomcat7-admin-webapps" : [ ]
+              }
+            },
+            "files" : {
+              "/usr/share/tomcat7/webapps/testapp.war" : {
+                "source" : "https://s3.amazonaws.com/net.adamsmolnik/testapp/war/testapp.war",
+                "owner" : "ec2-user"
+              },
+              "/etc/tomcat7/tomcat-users.xml" : {
+                "content" : {
+                  "Fn::Join" : [ "\n", [ "<?xml version='1.0' encoding='utf-8'?>", "<tomcat-users>", "<role rolename='admin'/>", "<role rolename='admin-gui'/>", "<role rolename='admin-script'/>", "<role rolename='manager'/>", "<role rolename='manager-gui'/>", "<role rolename='manager-script'/>", "<role rolename='manager-jmx'/>", "<role rolename='manager-status'/>", "<user username='admin' password='admin' roles='admin,manager,admin-gui,admin-script,manager-gui,manager-script,manager-jmx,manager-status'/>", "</tomcat-users>" ] ]
+                }
+              }
+            },
+            "commands" : {
+              "001_updateTomcatConfig" : {
+                "command" : "echo JAVA_OPTS=\\\"-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.port=8686 -Dcom.sun.management.jmxremote.ssl=false -Dcom.sun.management.jmxremote.authenticate=false\\\" >> /etc/tomcat7/tomcat7.conf",
+                "cwd" : "~"
+              },
+              "002_addTomcatConfig" : {
+                "command" : "chkconfig --add tomcat7",
+                "cwd" : "~"
+              },
+              "003_turnOnTomcat" : {
+                "command" : "chkconfig tomcat7 on",
+                "cwd" : "~"
+              },
+              "004_startTomcat" : {
+                "command" : "service tomcat7 start",
+                "cwd" : "~"
+              }
+             }
+          }
+        },
+        "AWS::CloudFormation::Authentication" : {
+          "default" : {
+            "type" : "s3",
+            "buckets" : [ "net.adamsmolnik" ],
+            "roleName" : {
+              "Ref" : "Role"
+            }
+          }
+        }
+      },
+      "Properties" : {
+        "ImageId" : {
+          "Ref" : "Image"
+        },
+        "SecurityGroups" : [ {
+          "Ref" : "SecurityGroup"
+        } ],
+        "InstanceType" : {
+          "Ref" : "InstanceType"
+        },
+        "IamInstanceProfile" : {
+          "Ref" : "InstanceProfile"
+        },
+        "KeyName" : {
+          "Ref" : "SecurityKey"
+        },
+        "UserData" : {
+          "Fn::Base64" : {
+            "Fn::Join" : [ "", [ "#!/bin/bash -v\n", "/opt/aws/bin/cfn-init -s ", {
+              "Ref" : "AWS::StackName"
+            }, " -r LaunchConfig ", " -v --region ", {
+              "Ref" : "AWS::Region"
+            }, "\n" ] ]
+          }
+        }
+      }
+    },
+    "ELBAlarms" : {
+      "Type" : "AWS::CloudFormation::Stack",
+      "Properties" : {
+        "TemplateURL" : {
+          "Fn::FindInMap" : [ "AZ", {
+            "Ref" : "NumberOfAZ"
+          }, "AlarmsTemplate" ]
+        },
+        "Parameters" : {
+          "MinInstancesAZ" : {
+            "Ref" : "MinInstancesAZ"
+          },
+          "ELB" : {
+            "Ref" : "SRV"
+          },
+          "ScaleUpPolicy" : {
+            "Ref" : "ScaleUpPolicy"
+          }
+        }
+      }
+    },
+    "SRV" : {
+      "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+      "Properties" : {
+        "Scheme" : "internal",
+        "Subnets" : {
+          "Fn::FindInMap" : [ "AZ", {
+            "Ref" : "NumberOfAZ"
+          }, "Subnets" ]
+        },
+        "SecurityGroups" : [ {
+          "Ref" : "SecurityGroup"
+        } ],
+        "Listeners" : [ {
+          "LoadBalancerPort" : "8080",
+          "InstancePort" : "8080",
+          "Protocol" : "HTTP"
+        } ],
+        "HealthCheck" : {
+          "Target" : "HTTP:8080/testapp/lb",
+          "HealthyThreshold" : "2",
+          "UnhealthyThreshold" : "2",
+          "Interval" : "6",
+          "Timeout" : "3"
+        }
+      }
+    },
+    "AutoScalingGroup" : {
+      "Type" : "AWS::AutoScaling::AutoScalingGroup",
+      "Properties" : {
+        "AvailabilityZones" : {
+          "Fn::FindInMap" : [ "AZ", {
+            "Ref" : "NumberOfAZ"
+          }, "AvailabilityZones" ]
+        },
+        "LaunchConfigurationName" : {
+          "Ref" : "LaunchConfig"
+        },
+        "MinSize" : {
+          "Ref" : "MinInstances"
+        },
+        "MaxSize" : {
+          "Ref" : "MaxInstances"
+        },
+        "Tags" : [ {
+          "Key" : "Name",
+          "Value" : {
+            "Ref" : "AWS::StackName"
+          },
+          "PropagateAtLaunch" : "true"
+        } ],
+        "LoadBalancerNames" : [ {
+          "Ref" : "SRV"
+        } ],
+        "VPCZoneIdentifier" : {
+          "Fn::FindInMap" : [ "AZ", {
+            "Ref" : "NumberOfAZ"
+          }, "Subnets" ]
+        }
+      }
+    }
+  },
+  "Outputs" : {
+    "CSASG" : {
+      "Description" : "testapp autoscaling group name",
+      "Value" : {
+        "Ref" : "AutoScalingGroup"
+      }
+    }
+  }
+}
