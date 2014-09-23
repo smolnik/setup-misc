@@ -1,0 +1,82 @@
+{
+	"Statement": 
+	[
+		{
+			"Resource": "*",
+			"Action": "s3:*",
+			"Effect": "Allow"
+		},
+
+		{
+			"Resource": "arn:aws:s3:::*/bonus/*",
+			"Action": "s3:*",
+			"Effect": "Deny"
+		},
+
+		{
+			"Resource": "*",
+			"Action": "swf:*",
+			"Effect": "Allow"
+		},
+
+		{
+			"Resource": "*",
+			"Action": 
+			[
+				"sns:CreateTopic",
+				"sns:Subscribe",
+				"sns:Publish"
+			],
+
+			"Effect": "Allow"
+		},
+
+		{
+			"Resource": "*",
+			"Action": 
+			[
+				"sqs:SendMessage",
+				"sqs:ReceiveMessage",
+				"sqs:DeleteMessage"
+			],
+
+			"Effect": "Allow"
+		},
+
+		{
+			"Resource": "*",
+			"Action": 
+			[
+				"ec2:*"
+			],
+
+			"Effect": "Allow"
+		},
+
+		{
+			"Resource": "*",
+			"Action": 
+			[
+				"elasticloadbalancing:*"
+			],
+
+			"Effect": "Allow"
+		},
+
+		{
+			"Resource": "arn:aws:iam::542175458111:role/glassfish4-1-java8-Role-1R2RSVMQOOE1Y",
+			"Action": "iam:PassRole",
+			"Effect": "Allow"
+		},
+
+		{
+			"Resource": "arn:aws:logs:us-east-1:*:*",
+			"Action": 
+			[
+				"logs:*"
+			],
+
+			"Effect": "Allow"
+		}
+	]
+}

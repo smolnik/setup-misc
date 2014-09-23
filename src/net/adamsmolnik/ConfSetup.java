@@ -1,5 +1,6 @@
 package net.adamsmolnik;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -12,6 +13,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import com.amazonaws.services.s3.AmazonS3Client;
+import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.PutObjectResult;
 
 public class ConfSetup {
@@ -21,15 +23,32 @@ public class ConfSetup {
     private static final AmazonS3Client s3 = new AmazonS3Client();
 
     public static void main(String[] args) throws Exception {
+        String content = new String (Files.readAllBytes(Paths.get("/putty/certs/students/codes.txt")), StandardCharsets.UTF_8);
+        String[] ss = content.split(",");
+        int k = 0;
+        for (int i = 1; i <= 60; i++) {
+            String code = ss[i-1].trim();
+            if(!code.isEmpty() && i <= 60){
+                String bucket = "student0" + (i<10? "0" : "") + i; 
+                byte [] bytes = code.getBytes(StandardCharsets.UTF_8);
+                ObjectMetadata om = new ObjectMetadata();
+                om.setContentLength(bytes.length);
+                PutObjectResult resp = s3.putObject(bucket, "bonus/aws_coupon_for_" + bucket + ".txt", new ByteArrayInputStream(bytes), om);
+            }
+        }
+        if(1 == 1){
+            return;
+        }
+        
         final String studentNumber = "student098";
 
         String credentialsFileName = "credentials_" + studentNumber + ".csv";
         File credentials = new File("/putty/certs/students/" + credentialsFileName);
-        s3.putObject(studentNumber, "keys" + credentialsFileName, credentials);
-
+        s3.putObject(studentNumber, "keys/" + credentialsFileName, credentials);
+        
         Path parentPath = Paths.get(Thread.currentThread().getContextClassLoader().getResource(".").toURI()).getParent();
         Path path = parentPath.resolve("resources");
-
+        
         System.out.println(path);
         Files.walkFileTree(path, new FileVisitor<Path>() {
 
