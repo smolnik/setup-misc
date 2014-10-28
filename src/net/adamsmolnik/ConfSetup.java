@@ -32,7 +32,7 @@ public class ConfSetup {
     private static final AmazonS3Client s3 = new AmazonS3Client();
 
     public static void main(String[] args) throws Exception {
-        putCodes();
+        users();
     }
 
     private static void cleaning() {
@@ -73,11 +73,11 @@ public class ConfSetup {
 
     private static void users() throws Exception {
         AmazonIdentityManagement client = new AmazonIdentityManagementClient();
-        for (int i = 1; i <= 1; i++) {
+        for (int i = 11; i <= 60; i++) {
             String userName = createStudentName(i);
             client.createUser(new CreateUserRequest(userName));
             client.addUserToGroup(new AddUserToGroupRequest("student", userName));
-            client.createLoginProfile(new CreateLoginProfileRequest(userName, "aws!" + userName));
+            client.createLoginProfile(new CreateLoginProfileRequest(userName, "xxx" + userName));
             // CreateAccessKeyResult result = client.createAccessKey(new CreateAccessKeyRequest(userName));
             // AccessKey accessKey = result.getAccessKey();
         }
