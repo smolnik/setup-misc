@@ -24,6 +24,10 @@ import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.PutObjectResult;
+import com.amazonaws.services.sqs.AmazonSQS;
+import com.amazonaws.services.sqs.AmazonSQSClient;
+import com.amazonaws.services.sqs.model.CreateQueueRequest;
+import com.amazonaws.services.sqs.model.SendMessageRequest;
 
 public class ConfSetup {
 
@@ -32,7 +36,8 @@ public class ConfSetup {
     private static final AmazonS3Client s3 = new AmazonS3Client();
 
     public static void main(String[] args) throws Exception {
-        users();
+        createSqs();
+        sendMessages();
     }
 
     private static void cleaning() {
@@ -71,13 +76,14 @@ public class ConfSetup {
         }
     }
 
-    private static void users() throws Exception {
+    private static void createUsers() throws Exception {
         AmazonIdentityManagement client = new AmazonIdentityManagementClient();
-        for (int i = 11; i <= 60; i++) {
+        for (int i = 53; i <= 53; i++) {
             String userName = createStudentName(i);
             client.createUser(new CreateUserRequest(userName));
             client.addUserToGroup(new AddUserToGroupRequest("student", userName));
-            client.createLoginProfile(new CreateLoginProfileRequest(userName, "xxx" + userName));
+            String pass = "xyz";
+            client.createLoginProfile(new CreateLoginProfileRequest(userName, pass));
             // CreateAccessKeyResult result = client.createAccessKey(new CreateAccessKeyRequest(userName));
             // AccessKey accessKey = result.getAccessKey();
         }
@@ -88,7 +94,7 @@ public class ConfSetup {
         return "student0" + (i < 10 ? "0" : "") + i;
     }
 
-    private static void misc() throws IOException, URISyntaxException {
+    private static void misc() throws Exception {
         final String studentNumber = "student098";
 
         String credentialsFileName = "credentials_" + studentNumber + ".csv";
@@ -147,6 +153,27 @@ public class ConfSetup {
             om.setContentLength(bytes.length);
             PutObjectResult resp = s3.putObject(studentName, "bonus/aws_coupon_for_" + studentName + ".txt", new ByteArrayInputStream(bytes), om);
         });;
+    }
+
+    private static void createSqs() {
+        AmazonSQS sqs = new AmazonSQSClient();
+        for (int i = 51; i <= 53; i++) {
+            String name = createStudentName(i);
+            CreateQueueRequest createQueueRequest = new CreateQueueRequest(getQueueName(name));
+            sqs.createQueue(createQueueRequest).getQueueUrl();
+        }
+    }
+
+    private static String getQueueName(String name) {
+        return name + "-queue";
+    }
+
+    private static void sendMessages() {
+        AmazonSQS sqs = new AmazonSQSClient();
+        for (int i = 51; i <= 53; i++) {
+            String name = createStudentName(i);
+            sqs.sendMessage(new SendMessageRequest(getQueueName(name), "This is a message from " + name));
+        }
     }
 
 }
