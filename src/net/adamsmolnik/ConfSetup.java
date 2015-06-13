@@ -14,6 +14,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+
 import com.amazonaws.services.identitymanagement.AmazonIdentityManagement;
 import com.amazonaws.services.identitymanagement.AmazonIdentityManagementClient;
 import com.amazonaws.services.identitymanagement.model.AddUserToGroupRequest;
@@ -21,8 +22,10 @@ import com.amazonaws.services.identitymanagement.model.CreateLoginProfileRequest
 import com.amazonaws.services.identitymanagement.model.CreateUserRequest;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3Client;
+import com.amazonaws.services.s3.model.ObjectListing;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.PutObjectResult;
+import com.amazonaws.services.s3.model.VersionListing;
 import com.amazonaws.services.sqs.AmazonSQS;
 import com.amazonaws.services.sqs.AmazonSQSClient;
 import com.amazonaws.services.sqs.model.CreateQueueRequest;
@@ -35,18 +38,24 @@ public class ConfSetup {
     private static final AmazonS3Client s3 = new AmazonS3Client();
 
     public static void main(String[] args) throws Exception {
-        createSqs();
-        sendMessages();
+        //createUsers();
+        addToGroup();
     }
 
-    private static void cleaning() {
+    private static void s3Cleaning() {
         AmazonS3 s3 = new AmazonS3Client();
-        for (int i = 1; i < 60; i++) {
-            String studentName = createStudentName(i);
-            s3.deleteObject(studentName, "keys/credentials_" + studentName + ".csv");
-            s3.deleteObject(studentName, "bonus/aws_coupon_for_" + studentName + ".txt");
-        }
+        s3.listBuckets().stream().filter(b -> b.getName().startsWith("student0")).forEach(b -> {
+            VersionListing vl = s3.listVersions(b.getName(), "");
+            vl.getVersionSummaries().forEach(v -> {
+                s3.deleteVersion(b.getName(), v.getKey(), v.getVersionId());
+            });
 
+            ObjectListing ol = s3.listObjects(b.getName());
+            ol.getObjectSummaries().forEach(s -> {
+                s3.deleteObject(b.getName(), s.getKey());
+            });
+            s3.deleteBucket(b.getName());
+        });
     }
 
     private static void codesRefinement() throws IOException {
@@ -68,8 +77,7 @@ public class ConfSetup {
         AmazonS3 s3 = new AmazonS3Client();
         String studentName = createStudentName(studentNumber);
         char[] cbuf = new char[100];
-        try (InputStreamReader isr = new InputStreamReader(s3.getObject(studentName, "bonus/aws_coupon_for_" + studentName + ".txt")
-                .getObjectContent())) {
+        try (InputStreamReader isr = new InputStreamReader(s3.getObject(studentName, "bonus/aws_coupon_for_" + studentName + ".txt").getObjectContent())) {
             isr.read(cbuf);
             return new String(cbuf).trim();
         }
@@ -77,18 +85,29 @@ public class ConfSetup {
 
     private static void createUsers() throws Exception {
         AmazonIdentityManagement client = new AmazonIdentityManagementClient();
-        for (int i = 53; i <= 53; i++) {
+        for (int i = 1; i <= 25; i++) {
             String userName = createStudentName(i);
             client.createUser(new CreateUserRequest(userName));
             client.addUserToGroup(new AddUserToGroupRequest("student", userName));
             String pass = "xyz";
             client.createLoginProfile(new CreateLoginProfileRequest(userName, pass));
-            // CreateAccessKeyResult result = client.createAccessKey(new CreateAccessKeyRequest(userName));
+            // CreateAccessKeyResult result = client.createAccessKey(new
+            // CreateAccessKeyRequest(userName));
             // AccessKey accessKey = result.getAccessKey();
         }
 
     }
 
+    private static void addToGroup() throws Exception {
+        AmazonIdentityManagement client = new AmazonIdentityManagementClient();
+        for (int i = 1; i <= 1; i++) {
+            String userName = createStudentName(i);
+            client.addUserToGroup(new AddUserToGroupRequest("admin", userName));
+        }
+
+    }
+
+    
     private static String createStudentName(int i) {
         return "student0" + (i < 10 ? "0" : "") + i;
     }
@@ -151,7 +170,8 @@ public class ConfSetup {
             ObjectMetadata om = new ObjectMetadata();
             om.setContentLength(bytes.length);
             PutObjectResult resp = s3.putObject(studentName, "bonus/aws_coupon_for_" + studentName + ".txt", new ByteArrayInputStream(bytes), om);
-        });;
+        });
+        ;
     }
 
     private static void createSqs() {
