@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.services.identitymanagement.AmazonIdentityManagement;
 import com.amazonaws.services.identitymanagement.AmazonIdentityManagementClient;
 import com.amazonaws.services.identitymanagement.model.AddUserToGroupRequest;
@@ -38,13 +39,15 @@ public class ConfSetup {
     private static final AmazonS3Client s3 = new AmazonS3Client();
 
     public static void main(String[] args) throws Exception {
-        //createUsers();
-        addToGroup();
+        // removeS3Policy();
+    	createUsers();
+        //addToGroup();
+    	//s3Cleaning();
     }
 
     private static void s3Cleaning() {
         AmazonS3 s3 = new AmazonS3Client();
-        s3.listBuckets().stream().filter(b -> b.getName().startsWith("student0")).forEach(b -> {
+        s3.listBuckets().stream().filter(b -> b.getName().contains("student")).forEach(b -> {
             VersionListing vl = s3.listVersions(b.getName(), "");
             vl.getVersionSummaries().forEach(v -> {
                 s3.deleteVersion(b.getName(), v.getKey(), v.getVersionId());
@@ -58,6 +61,12 @@ public class ConfSetup {
         });
     }
 
+    private static void removeS3Policy() {
+        AmazonS3 s3 = new AmazonS3Client();
+        s3.deleteBucketPolicy("adams_personal");
+    }
+
+    
     private static void codesRefinement() throws IOException {
         String ss[] = new String(Files.readAllBytes(Paths.get("c:/putty/certs/students/codes.txt")), StandardCharsets.UTF_8).split(",");
         int i = 0;
@@ -85,11 +94,12 @@ public class ConfSetup {
 
     private static void createUsers() throws Exception {
         AmazonIdentityManagement client = new AmazonIdentityManagementClient();
-        for (int i = 1; i <= 25; i++) {
+        for (int i = 24; i <= 24; i++) {
             String userName = createStudentName(i);
             client.createUser(new CreateUserRequest(userName));
-            client.addUserToGroup(new AddUserToGroupRequest("student", userName));
-            String pass = "xyz";
+            client.addUserToGroup(new AddUserToGroupRequest("codepot-student", userName));
+            // client.addUserToGroup(new AddUserToGroupRequest("", userName));
+            String pass = "***";
             client.createLoginProfile(new CreateLoginProfileRequest(userName, pass));
             // CreateAccessKeyResult result = client.createAccessKey(new
             // CreateAccessKeyRequest(userName));
@@ -109,7 +119,7 @@ public class ConfSetup {
 
     
     private static String createStudentName(int i) {
-        return "student0" + (i < 10 ? "0" : "") + i;
+        return String.format("%03d", i);
     }
 
     private static void misc() throws Exception {
